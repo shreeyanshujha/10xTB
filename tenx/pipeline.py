@@ -7,6 +7,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable
 
+from tenx.agents.decision import decide
+from tenx.agents.research_stub import stub_research_context
 from tenx.journal import Journal
 from tenx.paper import build_paper_trade
 from tenx.signals.quant_model import quant_signal
@@ -17,6 +19,8 @@ def run_pipeline(
     journal_path: str | Path = "data/journal.jsonl",
     fetch: Callable | None = None,
     signal_fn: Callable = quant_signal,
+    research_fn: Callable = stub_research_context,
+    decide_fn: Callable = decide,
     lookback_days: int = 1600,
 ) -> dict:
     if fetch is None:
@@ -40,11 +44,20 @@ def run_pipeline(
     signal = signal_fn(df, ticker)
     journal.log(run_id, "signal", signal.to_dict())
 
-    trade = build_paper_trade(signal)
+    research = research_fn(ticker)
+    journal.log(run_id, "research_context", research)
+
+    decision = decide_fn(signal, research)
+    journal.log(run_id, "decision", decision.to_dict())
+
+    trade = build_paper_trade(
+        decision.action, ticker,
+        price=signal.features["last_close"], as_of=signal.as_of,
+    )
     if trade is None:
         journal.log(run_id, "paper_trade", {
             "trade": None,
-            "reason": f"signal action was {signal.action}; no trade taken",
+            "reason": f"decision was {decision.action}; no trade taken",
         })
     else:
         journal.log(run_id, "paper_trade", {"trade": trade})
@@ -53,6 +66,8 @@ def run_pipeline(
         "run_id": run_id,
         "ticker": ticker,
         "signal": signal.to_dict(),
+        "research": research,
+        "decision": decision.to_dict(),
         "trade": trade,
     }
 
