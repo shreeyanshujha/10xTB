@@ -7,16 +7,18 @@ dependencies = [
     "openbb==4.7.2",
     "xgboost==3.4.1",
     "scikit-learn==1.9.0",
+    "anthropic==1.2.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
 [tool.setuptools]
-packages = ["tenx", "tenx.data", "tenx.signals", "tenx.quant"]
+packages = ["tenx", "tenx.data", "tenx.signals", "tenx.quant", "tenx.agents"]
 
 [tool.pytest.ini_options]
-addopts = "-m 'not network'"
+addopts = "-m 'not network and not llm'"
 markers = [
     "network: tests that hit live data providers (deselected by default)",
+    "llm: tests that call the live Claude API (deselected by default; needs credentials)",
 ]
