@@ -27,4 +27,7 @@ def get_daily_bars(
     if df.empty:
         raise ValueError(f"no daily bars returned for {ticker!r}")
     df = df[REQUIRED_COLUMNS].sort_index()
+    # yfinance returns plain datetime.date index values; standardize to
+    # DatetimeIndex so every downstream layer sees one consistent shape.
+    df.index = pd.to_datetime(df.index)
     return df

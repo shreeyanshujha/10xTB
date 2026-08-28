@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 
 from tenx.data.openbb_provider import get_daily_bars
@@ -11,6 +12,7 @@ def test_get_daily_bars_nvda_live():
     assert list(df.columns) == REQUIRED_COLUMNS
     assert len(df) > 10
     assert df.index.is_monotonic_increasing
+    assert isinstance(df.index, pd.DatetimeIndex)  # downstream calls .date() on bars
     assert (df["close"] > 0).all()
 
 
