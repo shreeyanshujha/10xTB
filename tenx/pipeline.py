@@ -9,14 +9,15 @@ from typing import Callable
 
 from tenx.journal import Journal
 from tenx.paper import build_paper_trade
-from tenx.signals.placeholder import sma_crossover_signal
+from tenx.signals.quant_model import quant_signal
 
 
 def run_pipeline(
     ticker: str = "NVDA",
     journal_path: str | Path = "data/journal.jsonl",
     fetch: Callable | None = None,
-    lookback_days: int = 120,
+    signal_fn: Callable = quant_signal,
+    lookback_days: int = 1600,
 ) -> dict:
     if fetch is None:
         from tenx.data.openbb_provider import get_daily_bars
@@ -36,7 +37,7 @@ def run_pipeline(
         "last_close": float(df["close"].iloc[-1]),
     })
 
-    signal = sma_crossover_signal(df, ticker)
+    signal = signal_fn(df, ticker)
     journal.log(run_id, "signal", signal.to_dict())
 
     trade = build_paper_trade(signal)
