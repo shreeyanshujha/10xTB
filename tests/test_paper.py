@@ -1,18 +1,10 @@
 import pytest
 
 from tenx.paper import build_paper_trade
-from tenx.signals.base import Signal
 
 
-def make_signal(action="BUY", last_close=200.0):
-    return Signal(
-        ticker="NVDA", as_of="2026-08-27", action=action,
-        confidence=0.5, features={"last_close": last_close}, rationale="test",
-    )
-
-
-def test_buy_signal_builds_trade():
-    trade = build_paper_trade(make_signal("BUY", last_close=200.0))
+def test_buy_builds_trade():
+    trade = build_paper_trade("BUY", "NVDA", 200.0, "2026-08-27")
     assert trade == {
         "ticker": "NVDA",
         "side": "BUY",
@@ -24,14 +16,14 @@ def test_buy_signal_builds_trade():
     }
 
 
-def test_sell_signal_builds_sell_side():
-    assert build_paper_trade(make_signal("SELL"))["side"] == "SELL"
+def test_sell_builds_sell_side():
+    assert build_paper_trade("SELL", "NVDA", 200.0, "2026-08-27")["side"] == "SELL"
 
 
 def test_hold_returns_none():
-    assert build_paper_trade(make_signal("HOLD")) is None
+    assert build_paper_trade("HOLD", "NVDA", 200.0, "2026-08-27") is None
 
 
 def test_price_above_notional_raises():
     with pytest.raises(ValueError):
-        build_paper_trade(make_signal("BUY", last_close=20_000.0))
+        build_paper_trade("BUY", "NVDA", 20_000.0, "2026-08-27")
