@@ -8,6 +8,7 @@ dependencies = [
     "xgboost==3.4.1",
     "scikit-learn==1.9.0",
     "anthropic==1.2.0",
+    "ib_async==2.1.0",
 ]
 
 [project.optional-dependencies]
@@ -17,8 +18,9 @@ dev = ["pytest>=8"]
 packages = ["tenx", "tenx.data", "tenx.signals", "tenx.quant", "tenx.agents"]
 
 [tool.pytest.ini_options]
-addopts = "-m 'not network and not llm'"
+addopts = "-m 'not network and not llm and not broker'"
 markers = [
     "network: tests that hit live data providers (deselected by default)",
     "llm: tests that call the live Claude API (deselected by default; needs credentials)",
+    "broker: tests that need a live IB Gateway/TWS (deselected by default)",
 ]

@@ -4,6 +4,7 @@ import pandas as pd
 from tenx.agents.decision import Decision
 from tenx.journal import Journal
 from tenx.pipeline import run_pipeline
+from tenx.risk import RiskLimits
 
 
 def fake_fetch_rising(ticker, start_date, end_date=None):
@@ -30,40 +31,75 @@ def make_fake_decide(action, conviction=0.7):
     return fake_decide
 
 
-def test_pipeline_end_to_end_offline(tmp_path):
-    jpath = tmp_path / "journal.jsonl"
-    # decision says BUY regardless of what the quant signal said — the
-    # decision, not the raw signal, must drive the trade
-    result = run_pipeline("NVDA", journal_path=jpath, fetch=fake_fetch_rising,
-                          decide_fn=make_fake_decide("BUY"))
+def run(tmp_path, **kw):
+    kw.setdefault("journal_path", tmp_path / "journal.jsonl")
+    kw.setdefault("portfolio_path", tmp_path / "pf.json")
+    kw.setdefault("fetch", fake_fetch_rising)
+    kw.setdefault("risk_limits",
+                  RiskLimits(kill_switch_path=str(tmp_path / "KILL_SWITCH")))
+    return run_pipeline("NVDA", **kw)
 
-    assert result["ticker"] == "NVDA"
-    assert result["signal"]["action"] in {"BUY", "SELL", "HOLD"}
-    assert result["research"]["status"] == "stub"
+
+def test_pipeline_approved_trade_executes_and_updates_portfolio(tmp_path):
+    result = run(tmp_path, decide_fn=make_fake_decide("BUY"))
+
     assert result["decision"]["action"] == "BUY"
-    assert result["trade"]["side"] == "BUY"
-    assert result["trade"]["hypothetical"] is True
+    assert result["risk"]["approved"] is True
+    assert result["order"]["mode"] == "simulated"
+    assert result["order"]["status"] == "filled"
+    filled = result["order"]["filled_qty"]
+    assert result["portfolio"]["positions"]["NVDA"]["qty"] == filled
+    assert (tmp_path / "pf.json").exists()
 
-    records = Journal(jpath).read_all()
+    records = Journal(tmp_path / "journal.jsonl").read_all()
     stages = [r["stage"] for r in records]
     assert stages == ["data_pull", "signal", "research_context", "decision",
-                      "paper_trade"]
+                      "proposed_trade", "risk_check", "execution"]
     assert len({r["run_id"] for r in records}) == 1
-    assert records[0]["payload"]["rows"] == 900
-    assert records[1]["payload"]["rationale"]
-    assert records[2]["payload"]["status"] == "stub"
-    # decision stage journals the FULL reasoning trail, not just the outcome
-    assert records[3]["payload"]["trail"]["system"]
-    assert records[3]["payload"]["trail"]["response_text"]
-    assert records[4]["payload"]["trade"]["side"] == "BUY"
+    # risk stage journals every check with detail
+    risk_payload = records[5]["payload"]
+    assert len(risk_payload["checks"]) == 5
+    assert all(c["detail"] for c in risk_payload["checks"])
+    # execution journals the order and the portfolio after it
+    exec_payload = records[6]["payload"]
+    assert exec_payload["order"]["mode"] == "simulated"
+    assert exec_payload["portfolio_after"]["positions"]["NVDA"]["qty"] == filled
 
 
-def test_pipeline_journals_no_trade_on_hold_decision(tmp_path):
-    jpath = tmp_path / "journal.jsonl"
-    result = run_pipeline("NVDA", journal_path=jpath, fetch=fake_fetch_rising,
-                          decide_fn=make_fake_decide("HOLD"))
+def test_pipeline_hold_decision_skips_risk_and_execution(tmp_path):
+    result = run(tmp_path, decide_fn=make_fake_decide("HOLD"))
     assert result["trade"] is None
-    last = Journal(jpath).read_all()[-1]
-    assert last["stage"] == "paper_trade"
-    assert last["payload"]["trade"] is None
-    assert "reason" in last["payload"]
+    assert result["risk"] is None
+    assert result["order"] is None
+    records = Journal(tmp_path / "journal.jsonl").read_all()
+    assert [r["stage"] for r in records][-1] == "proposed_trade"
+    assert records[-1]["payload"]["trade"] is None
+    assert "reason" in records[-1]["payload"]
+
+
+def test_pipeline_blocked_trade_never_reaches_broker(tmp_path):
+    class ExplodingBroker:
+        def submit(self, trade):
+            raise AssertionError("broker must not be called on a blocked trade")
+
+    result = run(
+        tmp_path,
+        decide_fn=make_fake_decide("BUY"),
+        broker=ExplodingBroker(),
+        risk_limits=RiskLimits(max_position_notional=1.0,
+                               kill_switch_path=str(tmp_path / "KILL_SWITCH")),
+    )
+    assert result["risk"]["approved"] is False
+    assert result["order"] is None
+    assert result["portfolio"]["positions"] == {}
+    records = Journal(tmp_path / "journal.jsonl").read_all()
+    assert [r["stage"] for r in records][-1] == "risk_check"
+
+
+def test_pipeline_kill_switch_blocks_trade(tmp_path):
+    (tmp_path / "KILL_SWITCH").touch()
+    result = run(tmp_path, decide_fn=make_fake_decide("BUY"))
+    assert result["risk"]["approved"] is False
+    assert result["order"] is None
+    kill = next(c for c in result["risk"]["checks"] if c["name"] == "kill_switch")
+    assert kill["passed"] is False
