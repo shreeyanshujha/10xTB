@@ -1,0 +1,20 @@
+[project]
+name = "tenx"
+version = "0.0.1"
+description = "Agentic trading platform — Phase 0 walking skeleton"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "openbb==4.7.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["tenx", "tenx.data", "tenx.signals"]
+
+[tool.pytest.ini_options]
+addopts = "-m 'not network'"
+markers = [
+    "network: tests that hit live data providers (deselected by default)",
+]
